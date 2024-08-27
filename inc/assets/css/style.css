@@ -1,0 +1,11 @@
+/* Style for disabled delete button in list view */
+.wpdmc_disable_delete {
+    pointer-events: none;
+    color: unset !important;
+    text-decoration: none;
+}
+
+/* Style for disabled delete button error */
+.wpmdc_attached_error {
+    color: red !important;
+}
