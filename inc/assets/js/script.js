@@ -8,7 +8,7 @@ jQuery(document).ready(function($) {
             attachment_id: id,
             security: nonce
         }, function(response) {
-            if (response.data.find) {
+            if (response.data?.find) {
                 $('button.delete-attachment').prop('disabled', true);
                 $("button.delete-attachment").css("color", "unset");
                 $("button.delete-attachment").css("cursor", "not-allowed");
