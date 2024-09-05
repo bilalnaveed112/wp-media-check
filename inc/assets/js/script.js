@@ -23,9 +23,30 @@ jQuery(document).ready(function($) {
         checkImageUsage(attachmentId);
     }
 
+    const processAllImages = (e) => {
+        e.preventDefault();
+        const data = {
+            action: 'process_all_images',
+            security: nonce,
+        };
+        $.ajax({
+            type: 'POST',
+            url: ajaxurl,
+            data,
+            success(response){
+                console.log(response);
+            },
+            error(xhr) {
+                console.log(xhr);
+            }
+        });
+    }
+
     (function bindEvents() {
         // Bind the function to the media library's grid view events
         $(document).on('click', '.attachment', restrictDeleteButton);
+
+        $(document).on('click', '.process_all_images', processAllImages);
 
         $(document).ajaxComplete(function(event, xhr, settings) {
             // Check if the action is 'query-attachments'
@@ -39,4 +60,21 @@ jQuery(document).ready(function($) {
         });
 
     })();
+    // wp.media.editor.insert = function (html) {
+    //     let altText = '';
+
+    //     // Parse the HTML to extract the alt attribute
+    //     const altAttr = $(html).find('img').attr('alt');
+    //     if (altAttr) {
+    //         altText = altAttr.trim();
+    //     }
+
+    //     // If Alt text is missing, prevent image insertion and show an alert
+    //     if (!altText) {
+    //         alert('You cannot insert an image without an Alt text.');
+    //         return; // Prevent insertion
+    //     }
+
+    //     return wp.media.editor.insert(html); // Allow insertion
+    // };
 });

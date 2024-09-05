@@ -24,11 +24,23 @@ class WPSQR_WPMDC {
 	private static $instance = null;
 
 	/**
+	 * Holds the singleton instance of image processing class
+	 *
+	 * @since    1.0.0
+	 * @access   private
+	 * @var      string    $instance
+	 */
+	public $image_processor;
+
+	/**
 	 * Define the core functionality of the plugin.
 	 *
 	 * @since 1.0.0
 	 */
 	public function __construct() {
+
+		$this->load_dependencies();
+
 		add_action( 'admin_enqueue_scripts', array( $this, 'enqueue_assets' ) );
 		add_filter( 'media_row_actions', array( $this, 'restrict_media_deletion_remove_delete_action' ), 10, 2 );
 		add_action( 'wp_ajax_check_attachment_usage', array( $this, 'check_attachment_usage' ) );
@@ -36,8 +48,12 @@ class WPSQR_WPMDC {
 		add_action( 'manage_media_custom_column', array( $this, 'populate_attached_objects_column' ), 10, 2 );
 		add_filter( 'attachment_fields_to_edit', array( $this, 'add_custom_media_field' ), 10, 2 );
 		add_action( 'save_post', array( $this, 'invalidate_cache_on_update' ), 10, 1 );
-		add_action( 'wpmdc_cache_all_images_event', array( $this, 'wpmdc_cache_all_images_event' ) );
-		add_filter( 'cron_schedules', array( $this, 'wpmdc_cron_schedules' ) );
+		add_action( 'delete_post', array( $this, 'invalidate_cache_on_update' ), 10, 1 );
+		add_action( 'edited_term', array( $this, 'invalidate_cache_on_update' ), 10, 1 );
+		add_action( 'deleted_term', array( $this, 'invalidate_cache_on_update' ), 10, 1 );
+		add_action( 'wp_ajax_process_all_images', array( $this, 'wpmdc_process_all_images' ) );
+		add_action( 'admin_menu', array( $this, 'wpmdc_welcome_page' ) );
+		add_action( 'admin_init', array( $this, 'wpmdc_redirect_on_activation' ) );
 	}
 
 	/**
@@ -79,12 +95,86 @@ class WPSQR_WPMDC {
 	}
 
 	/**
+	 * Loading files.
+	 */
+	public function load_dependencies() {
+
+		/**
+		 * Retereving image processor.
+		 */
+		require_once WPSQR_WPMDC_DIR_PATH . 'inc/class-wp-image-processing.php';
+		$this->image_processor = new \WP_Image_Processing();
+	}
+
+	/**
 	 * Fired during plugin activation.
 	 */
 	public static function activate() {
-		// if ( ! wp_next_scheduled( 'wpmdc_cache_all_images_event' ) ) {
-		//  wp_schedule_event( time() + 60, 'five_minutes', 'wpmdc_cache_all_images_event' );
-		// }
+		add_option( 'wpmdc_activation_redirect', true );
+	}
+
+	/**
+	 * Redirect to plugin's page after installation.
+	 */
+	public function wpmdc_redirect_on_activation() {
+		if ( get_option( 'wpmdc_activation_redirect', false ) ) {
+			delete_option( 'wpmdc_activation_redirect' );
+			if ( ! is_network_admin() && ! isset( $_GET['activate-multi'] ) ) {
+				wp_safe_redirect( admin_url( 'tools.php?page=wp_media_check' ) );
+				exit;
+			}
+		}
+	}
+
+	/**
+	 * Welcome Page of plugin.
+	 */
+	public function wpmdc_welcome_page() {
+		add_management_page(
+			'Welcome to WP Media Check',
+			'Media Check',
+			'manage_options',
+			'wp_media_check',
+			array( $this, 'wpmdc_page_content' ),
+		);
+	}
+
+	/**
+	 * Welcome Page Content of plugin.
+	 */
+	public function wpmdc_page_content() {
+		global $wpdb;
+		// Query to count the total number of attachment posts (images) in the database.
+		$total_images_sql = "SELECT COUNT(*) FROM $wpdb->posts WHERE post_type = 'attachment'";
+		$total_images     = (int) $wpdb->get_var( $total_images_sql ); //phpcs:ignore
+
+		// Retrieve the image processing progress from the options table.
+		$image_processing_progress = get_option( 'wpmdc_image_processing_progress' );
+		$cached_data               = get_option( 'wpmdc_images_data', array() );
+
+		// Initialize the image processing progress option if it doesn't already exist.
+		if ( ! $image_processing_progress ) {
+			$image_processing_progress = array(
+				'total'     => $total_images,
+				'processed' => count( $cached_data ),
+				'pending'   => $total_images - count( $cached_data ),
+			);
+			update_option( 'wpmdc_image_processing_progress', $image_processing_progress );
+		}
+		$processed_images = $image_processing_progress['processed'] ? $image_processing_progress['processed'] : 0;
+		$pending_images   = $image_processing_progress['pending'] ? $image_processing_progress['pending'] : 0;
+		?>
+		<div class="wrap">
+			<h1><?php esc_html_e( 'Welcome to Media Check Plugin', 'wp-media-check' ); ?></h1>
+			<p><?php esc_html_e( 'Thank you for installing ! Here is how to get started...', 'wp-media-check' ); ?></p>
+			<div id="wpmdc-image-processing-progress">
+				<p><?php esc_html_e( 'Total Images:', 'wp-media-check' ); ?><span id="total-images"><?php esc_html_e( $total_images ); // phpcs:ignore?></span></p> 
+				<p><?php esc_html_e( 'Processed:', 'wp-media-check' ); ?><span id="processed-images"><?php esc_html_e( $processed_images ); // phpcs:ignore ?></span></p>
+				<p><?php esc_html_e( 'Pending:', 'wp-media-check' ); ?><span id="pending-images"><?php esc_html_e( $pending_images ); // phpcs:ignore ?></span></p>
+			</div>
+				<button class="button button-primary process_all_images" disabled><?php esc_html_e( 'Process All Images', 'wp-media-check' ); ?></button>
+		</div>
+		<?php
 	}
 
 	/**
@@ -103,7 +193,7 @@ class WPSQR_WPMDC {
 	 * @return array Modified array of actions, with 'delete' action removed if the attachment is in use.
 	 */
 	public function restrict_media_deletion_remove_delete_action( $actions, $post ) {
-		$posts = $this->get_attached_posts( $post->ID );
+		$posts = $this->image_processor->get_attached_posts( $post->ID );
 		if ( count( $posts ) > 0 ) {
 			$actions['delete'] = '<a href="#" class="wpdmc_disable_delete disabled">' . __( 'Delete Permanently', 'wp-media-check' ) . '</a>';
 		}
@@ -122,7 +212,7 @@ class WPSQR_WPMDC {
 			wp_send_json_error( $error_message );
 		}
 		$attachment_id = filter_input( INPUT_POST, 'attachment_id', FILTER_VALIDATE_INT );
-		$posts         = $this->get_attached_posts( $attachment_id );
+		$posts         = $this->image_processor->get_attached_posts( $attachment_id );
 		if ( count( $posts ) > 0 ) {
 			wp_send_json_success(
 				array(
@@ -137,163 +227,6 @@ class WPSQR_WPMDC {
 				)
 			);
 		}
-	}
-
-	/**
-	 * Retrieves the count of posts that use a specific attachment.
-	 *
-	 * @param int $image_id The ID of the attachment to check.
-	 *
-	 * @return int|false The count of posts using the attachment or `false` if no posts are found.
-	 */
-	public function get_attached_posts( $image_id ) {
-		$cached_data = get_option( 'wpmdc_images_data', array() ); // Retrieve the cached data from options.
-
-		// Check if the specific post ID exists in the cached data.
-		if ( isset( $cached_data[ $image_id ] ) ) {
-			if ( ! empty( $cached_data[ $image_id ]['links'] ) ) {
-				return $cached_data[ $image_id ]['links'];
-			}
-		}
-		global $wpdb;
-
-		// 1. Check if the image is used as a featured image (thumbnail).
-		$featured_image_posts = new \WP_Query(
-			array(
-				'post_type'   => 'any',
-				'post_status' => 'any',
-				'meta_query'  => array(   //phpcs:ignore WordPress.DB.SlowDBQuery.slow_db_query_meta_query
-					array(
-						'key'     => '_thumbnail_id',
-						'value'   => $image_id,
-						'compare' => '=',
-					),
-				),
-			)
-		);
-
-		// 2. Check if the image is used in post content.
-		$posts_with_image = get_posts(
-			array(
-				'post_type'   => 'any',
-				'post_status' => 'any',
-				's'           => $image_id,
-			)
-		);
-
-		// 3. Check if the image is used in any post meta fields.
-		$meta_query = $wpdb->get_results( //phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching 
-			$wpdb->prepare(
-				"SELECT post_id FROM {$wpdb->postmeta} WHERE meta_value LIKE %s",
-				'%' . $wpdb->esc_like( $image_id ) . '%'
-			)
-		);
-
-		// 4. Check if the image is used in any options (widgets, theme settings, etc.).
-		$options_query = $wpdb->get_results( //phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching 
-			$wpdb->prepare(
-				"SELECT option_name FROM {$wpdb->options} WHERE option_value LIKE %s",
-				'%' . $wpdb->esc_like( $image_id ) . '%'
-			)
-		);
-
-		// 5. Check if the image is used in any taxonomy terms.
-		$term_meta_query = $wpdb->get_results( //phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching 
-			$wpdb->prepare(
-				"SELECT term_id FROM {$wpdb->termmeta} WHERE meta_value LIKE %s",
-				'%' . $wpdb->esc_like( $image_id ) . '%'
-			)
-		);
-
-		$post_edit_links    = array();
-		$existing_post_data = array();
-		$existing_posts     = array();
-		if ( ! empty( $featured_image_posts ) ) {
-			while ( $featured_image_posts->have_posts() ) {
-				$featured_image_posts->the_post();
-				$post_id = get_the_ID();
-				if ( ! in_array( $post_id, $existing_posts ) ) { //phpcs:ignore
-					$post_edit_links[]                            = '<a href="' . get_edit_post_link( $post_id ) . '">' . get_the_title() . '</a>';
-					$existing_post_data['featured_image_posts'][] = array(
-						'id'    => $post_id,
-						'title' => get_the_title( $post_id ),
-						'link'  => get_edit_post_link( $post_id ),
-					);
-					$existing_posts[]                             = $post_id;
-				}
-			}
-		}
-
-		if ( ! empty( $posts_with_image ) ) {
-			foreach ( $posts_with_image as $post ) {
-				$post_id = $post->ID;
-				if ( ! in_array( $post_id, $existing_posts ) ) { //phpcs:ignore
-					$post_edit_links[]                        = '<a href="' . get_edit_post_link( $post_id ) . '">' . $post->post_title . '</a> ';
-					$existing_post_data['posts_with_image'][] = array(
-						'id'    => $post_id,
-						'title' => $post->post_title,
-						'link'  => get_edit_post_link( $post_id ),
-					);
-					$existing_posts[]                         = $post_id;
-				}
-			}
-		}
-
-		if ( ! empty( $meta_query ) ) {
-			foreach ( $meta_query as $meta ) {
-				$post_meta_id = $meta->post_id;
-				if ( ! in_array( $post_meta_id, $existing_posts ) ) { //phpcs:ignore
-					$post_edit_links[]                     = '<a href="' . get_edit_post_link( $post_meta_id ) . '">' . get_the_title( $post_meta_id ) . '  ( ' . get_post_status( $post_meta_id ) . ' ) </a>';
-					$existing_post_data['posts_in_meta'][] = array(
-						'id'     => $post_meta_id,
-						'title'  => get_the_title( $post_meta_id ),
-						'status' => get_post_status( $post_meta_id ),
-						'link'   => get_edit_post_link( $post_meta_id ),
-					);
-					$existing_posts[]                      = $post_meta_id;
-				}
-			}
-		}
-
-		if ( ! empty( $options_query ) ) {
-			foreach ( $options_query as $option ) {
-				$option_name = $option->option_name;
-				if ( ! in_array( $option_name, $existing_posts ) && $option_name !== 'wpmdc_images_data' ) { //phpcs:ignore
-					$post_edit_links[]               = 'Option name : <strong>' . esc_html( $option_name ) . '</strong>';
-					$existing_post_data['options'][] = array(
-						'name' => $option_name,
-					);
-					$existing_posts[]                = $option_name;
-				}
-			}
-		}
-
-		if ( ! empty( $term_meta_query ) ) {
-			foreach ( $term_meta_query as $term ) {
-				$term_id = $term->term_id;
-				if ( ! in_array( $term_id, $existing_posts ) ) { //phpcs:ignore
-					$term_info                     = get_term( $term_id );
-					$term_name                     = $term_info->name;
-					$taxonomy                      = $term_info->taxonomy;
-					$post_edit_links[]             = 'Term : <a href="' . get_edit_term_link( $term_id, $taxonomy ) . '">' . $term_name . ' </a>';
-					$existing_post_data['terms'][] = array(
-						'id'       => $term_id,
-						'name'     => $term_info->name,
-						'taxonomy' => $term_info->taxonomy,
-						'link'     => get_edit_term_link( $term_id, $term_info->taxonomy ),
-					);
-					$existing_posts[]              = $term_id;
-				}
-			}
-		}
-		wp_reset_postdata();
-		if ( ! empty( $existing_post_data ) && ! empty( $post_edit_links ) ) {
-			$cached_data[ $image_id ]['data']  = $existing_post_data;
-			$cached_data[ $image_id ]['links'] = $post_edit_links;
-			update_option( 'wpmdc_images_data', $cached_data );
-		}
-
-		return $post_edit_links;
 	}
 
 	/**
@@ -315,7 +248,7 @@ class WPSQR_WPMDC {
 	public function populate_attached_objects_column( $column_name, $post_id ) {
 		if ( 'attached_objects' === $column_name ) {
 			// Get media usage links for the post ID.
-			$post_edit_links = $this->get_attached_posts( $post_id );
+			$post_edit_links = $this->image_processor->get_attached_posts( $post_id );
 			if ( ! empty( $post_edit_links ) ) {
 				echo '<div class="wpmdc_attached">';
 				$message = $this->getting_list_of_linked_posts( $post_edit_links );
@@ -338,7 +271,7 @@ class WPSQR_WPMDC {
 		$message = '';
 
 		// Get media usage links for the post ID.
-		$post_edit_links = $this->get_attached_posts( $post_id );
+		$post_edit_links = $this->image_processor->get_attached_posts( $post_id );
 
 		if ( ! empty( $post_edit_links ) ) {
 			$message = $this->getting_list_of_linked_posts( $post_edit_links );
@@ -377,36 +310,32 @@ class WPSQR_WPMDC {
 	/**
 	 * Getting list of images and storing in cache.
 	 */
-	public function wpmdc_cache_all_images_event() {
-		// Get the current progress from options or start fresh.
-		$paged      = get_option( 'wpmdc_cache_images_paged', 1 );
-		$batch_size = 500; // Number of images per batch.
+	public function wpmdc_process_all_images() {
 
-		// Query attachments.
-		$args        = array(
+		$wpmdc_nonce = filter_input( INPUT_POST, 'security', FILTER_SANITIZE_SPECIAL_CHARS );
+		if ( ! wp_verify_nonce( $wpmdc_nonce, 'wpsqr_ajax_nonce' ) ) {
+			$error_message = __( 'Authentication Error: Nonce verification failed.', 'wp-media-check' );
+			wp_send_json_error( $error_message );
+		}
+
+		// Get all image IDs from the database.
+		$args   = array(
 			'post_type'      => 'attachment',
-			'posts_per_page' => $batch_size,
-			'paged'          => $paged,
-			'post_status'    => 'any',
+			'post_status'    => 'inherit',
+			'posts_per_page' => -1, // Retrieve all attachments.
+			'fields'         => 'ids', // Only retrieve IDs.
 		);
-		$attachments = new \WP_Query( $args );
+		$images = get_posts( $args );
 
-		// If no more attachments, clear scheduled event and reset progress.
-		if ( ! $attachments->have_posts() ) {
-			wp_clear_scheduled_hook( 'wpmdc_cache_all_images_event' );
-			delete_option( 'wpmdc_cache_images_paged' );
-			return;
+		// Add each image to the background queue.
+		foreach ( $images as $image_id ) {
+			$this->image_processor->push_to_queue( $image_id );
 		}
 
-		// Process each attachment.
-		foreach ( $attachments->posts as $post ) {
-			$post_id = $post->ID;
-			$this->get_attached_posts( $post_id );
-		}
-
-		// Increment the page number for the next batch and save it.
-		++$paged;
-		update_option( 'wpmdc_cache_images_paged', $paged );
+		// Dispatch the queue.
+		$this->image_processor->save()->dispatch();
+		wp_send_json( 'Started Working' );
+		exit;
 	}
 
 	/**
@@ -427,15 +356,15 @@ class WPSQR_WPMDC {
 			}
 		} else {
 			$image_ids_for_post = array();
-			$attached_images    = $this->get_all_image_ids_from_post( $post_id );
 			$found              = false; // Flag to track if the post is found.
+			$attached_images    = $this->get_all_image_ids_from_post( $post_id ); // Fethcing all images of post's and remove their cache.
 			if ( ! empty( $attached_images ) ) {
 				foreach ( $attached_images as $image_id ) {
 					$image_ids_for_post[] = $image_id;
 				}
 			}
 
-			// Iterate through cached data.
+			// Iterate through cached data and removing cahche of images which are coonected to this post.
 			foreach ( $cached_data as $image_id => $data ) {
 				if ( $found ) {
 					break; // Exit outermost loop if found.
@@ -550,20 +479,6 @@ class WPSQR_WPMDC {
 		return $attachment_id ? $attachment_id : 0;
 	}
 
-
-	/**
-	 * Adding Custom time for scheduling.
-	 *
-	 * @param string $schedules getting id of edited post.
-	 */
-	public function wpmdc_cron_schedules( $schedules ) {
-		if ( ! isset( $schedules['five_minutes'] ) ) {
-			$schedules['five_minutes'] = array(
-				'interval' => 300,
-				'display'  => esc_html__( 'Every Minute' ),
-			);
-		}
-	}
 	/**
 	 * The singleton method
 	 */
