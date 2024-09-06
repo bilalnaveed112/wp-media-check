@@ -54,6 +54,7 @@ class WPSQR_WPMDC {
 		add_action( 'wp_ajax_process_all_images', array( $this, 'wpmdc_process_all_images' ) );
 		add_action( 'admin_menu', array( $this, 'wpmdc_welcome_page' ) );
 		add_action( 'admin_init', array( $this, 'wpmdc_redirect_on_activation' ) );
+		add_action( 'wp_ajax_check_progress_status', array( $this, 'wpmdc_check_progress_status' ) );
 	}
 
 	/**
@@ -148,19 +149,31 @@ class WPSQR_WPMDC {
 		$total_images_sql = "SELECT COUNT(*) FROM $wpdb->posts WHERE post_type = 'attachment'";
 		$total_images     = (int) $wpdb->get_var( $total_images_sql ); //phpcs:ignore
 
-		// Retrieve the image processing progress from the options table.
-		$image_processing_progress = get_option( 'wpmdc_image_processing_progress' );
-		$cached_data               = get_option( 'wpmdc_images_data', array() );
+		$meta_key                 = $this->image_processor->meta_key; // Replace with your actual meta key.
+		$wpmdc_progress_bar_class = $this->image_processor->check_if_queued() ? 'wpmdc_d_block' : 'wpmdc_d_none';
+
+		// SQL query to count images with a specific meta key.
+		$count_images_sql = $wpdb->prepare(
+			"SELECT COUNT(*) FROM {$wpdb->posts} p
+			INNER JOIN {$wpdb->postmeta} pm ON p.ID = pm.post_id
+			WHERE p.post_type = 'attachment'
+			AND pm.meta_key = %s",
+			$meta_key
+		);
+
+		// Get the count of images.
+		$total_images_with_meta_key = (int) $wpdb->get_var( $count_images_sql );
+		$image_processing_progress  = get_option( 'wpmdc_image_processing_progress' );
 
 		// Initialize the image processing progress option if it doesn't already exist.
-		if ( ! $image_processing_progress ) {
-			$image_processing_progress = array(
-				'total'     => $total_images,
-				'processed' => count( $cached_data ),
-				'pending'   => $total_images - count( $cached_data ),
-			);
-			update_option( 'wpmdc_image_processing_progress', $image_processing_progress );
-		}
+		$image_processing_progress = array(
+			'total'     => $total_images,
+			'processed' => $total_images_with_meta_key,
+			'pending'   => $total_images - $total_images_with_meta_key,
+		);
+
+		$total_processed = ( $total_images_with_meta_key / $total_images ) * 100;
+		update_option( 'wpmdc_image_processing_progress', $image_processing_progress );
 		$processed_images = $image_processing_progress['processed'] ? $image_processing_progress['processed'] : 0;
 		$pending_images   = $image_processing_progress['pending'] ? $image_processing_progress['pending'] : 0;
 		?>
@@ -172,7 +185,13 @@ class WPSQR_WPMDC {
 				<p><?php esc_html_e( 'Processed:', 'wp-media-check' ); ?><span id="processed-images"><?php esc_html_e( $processed_images ); // phpcs:ignore ?></span></p>
 				<p><?php esc_html_e( 'Pending:', 'wp-media-check' ); ?><span id="pending-images"><?php esc_html_e( $pending_images ); // phpcs:ignore ?></span></p>
 			</div>
-				<button class="button button-primary process_all_images" disabled><?php esc_html_e( 'Process All Images', 'wp-media-check' ); ?></button>
+			<button class="button button-primary process_all_images"><?php esc_html_e( 'Process All Images', 'wp-media-check' ); ?></button>
+			<!-- <button class="button button-primary pause-process" ><?php esc_html_e( 'Pause Processing', 'wp-media-check' ); ?></button>
+			<button class="button button-primary resume-process" ><?php esc_html_e( 'Resume Processing', 'wp-media-check' ); ?></button> -->
+			<!-- <button class="button button-primary cancel-process" ><?php esc_html_e( 'Cancel Processing', 'wp-media-check' ); ?></button> -->
+			<div class="wpmdc_progress_container <?php echo esc_attr( $wpmdc_progress_bar_class ); ?>">
+				<div class="wpmdc_progress_bar" style="width: <?php echo $total_processed; ?>%;"><?php echo $total_processed; ?></div>
+			</div>
 		</div>
 		<?php
 	}
@@ -319,22 +338,28 @@ class WPSQR_WPMDC {
 		}
 
 		// Get all image IDs from the database.
-		$args   = array(
-			'post_type'      => 'attachment',
-			'post_status'    => 'inherit',
-			'posts_per_page' => -1, // Retrieve all attachments.
-			'fields'         => 'ids', // Only retrieve IDs.
-		);
-		$images = get_posts( $args );
+		// $args   = array(
+		// 	'post_type'      => 'attachment',
+		// 	'post_status'    => 'inherit',
+		// 	'posts_per_page' => -1, // Retrieve all attachments.
+		// 	'fields'         => 'ids', // Only retrieve IDs.
+		// 	'meta_query'     => array(
+		// 		array(
+		// 			'key'     => $this->image_processor->meta_key,
+		// 			'compare' => 'NOT EXISTS',
+		// 		),
+		// 	),
+		// );
+		// $images = get_posts( $args );
 
-		// Add each image to the background queue.
-		foreach ( $images as $image_id ) {
-			$this->image_processor->push_to_queue( $image_id );
-		}
+		// // Add each image to the background queue.
+		// foreach ( $images as $image_id ) {
+		// 	$this->image_processor->push_to_queue( $image_id );
+		// }
 
-		// Dispatch the queue.
-		$this->image_processor->save()->dispatch();
-		wp_send_json( 'Started Working' );
+		// // Dispatch the queue.
+		// $this->image_processor->save()->dispatch();
+		wp_send_json( true );
 		exit;
 	}
 
@@ -344,64 +369,31 @@ class WPSQR_WPMDC {
 	 * @param string $post_id getting id of edited post.
 	 */
 	public function invalidate_cache_on_update( $post_id ) {
-		// Retrieve the cache.
-		$cached_data = get_option( 'wpmdc_images_data', array() );
 
-		// Check if the updated post is an image.
-		if ( get_post_type( $post_id ) === 'attachment' ) {
-			// Remove the post ID from the cached data.
-			if ( isset( $cached_data[ $post_id ] ) ) {
-				unset( $cached_data[ $post_id ] );
-				update_option( 'wpmdc_images_data', $cached_data );
+		// meta key.
+		$meta_key = $this->image_processor->meta_key;
+		$post     = get_post( $post_id );
+		// Retrieve the saved values.
+		if ( $post ) {
+			$saved_images = get_post_meta( $post_id, $meta_key, true );
+			if ( get_post_type( $post_id ) == 'attachment' ) {
+				delete_post_meta( $post_id, $meta_key );
 			}
 		} else {
-			$image_ids_for_post = array();
-			$found              = false; // Flag to track if the post is found.
-			$attached_images    = $this->get_all_image_ids_from_post( $post_id ); // Fethcing all images of post's and remove their cache.
-			if ( ! empty( $attached_images ) ) {
-				foreach ( $attached_images as $image_id ) {
-					$image_ids_for_post[] = $image_id;
+			$saved_images = get_term_meta( $post_id, $meta_key, true );
+		}
+
+		if ( ! empty( $saved_images ) ) {
+			foreach ( $saved_images as $image_id ) {
+				if ( $image_id && 'attachment' == get_post_type( $image_id ) ) {
+					delete_post_meta( $image_id, $meta_key );
 				}
 			}
-
-			// Iterate through cached data and removing cahche of images which are coonected to this post.
-			foreach ( $cached_data as $image_id => $data ) {
-				if ( $found ) {
-					break; // Exit outermost loop if found.
-				}
-
-				// Check if 'data' array exists and extract its keys dynamically.
-				if ( isset( $data['data'] ) && is_array( $data['data'] ) ) {
-					// Extracting dynamic keys to check.
-					$keys_to_check = array_keys( $data['data'] );
-
-					foreach ( $keys_to_check as $key ) {
-						if ( $found ) {
-							break; // Exit middle loop if found.
-						}
-
-						if ( is_array( $data['data'][ $key ] ) ) {
-							foreach ( $data['data'][ $key ] as $post_with_image ) {
-								if ( isset( $post_with_image['id'] ) && $post_with_image['id'] == $post_id ) {
-									$image_ids_for_post[] = $image_id;
-									$found                = true; // Set the flag to true.
-									break; // Exit innermost loop.
-								}
-							}
-						}
-					}
-				}
-			}
-
-			// Remove the image IDs from cache.
-			if ( ! empty( $image_ids_for_post ) ) {
-				foreach ( $image_ids_for_post as $image_id ) {
-					if ( isset( $cached_data[ $image_id ] ) ) {
-						unset( $cached_data[ $image_id ] );
-					}
-				}
-				update_option( 'wpmdc_images_data', $cached_data );
-			}
+		}
+		if ( $post ) {
+			delete_post_meta( $post_id, $meta_key );
+		} else {
+			delete_term_meta( $post_id, $meta_key );
 		}
 	}
 
@@ -477,6 +469,18 @@ class WPSQR_WPMDC {
 		}
 
 		return $attachment_id ? $attachment_id : 0;
+	}
+
+	public function wpmdc_check_progress_status() {
+		$wpmdc_nonce = filter_input( INPUT_POST, 'security', FILTER_SANITIZE_SPECIAL_CHARS );
+		if ( ! wp_verify_nonce( $wpmdc_nonce, 'wpsqr_ajax_nonce' ) ) {
+			$error_message = __( 'Authentication Error: Nonce verification failed.', 'wp-media-check' );
+			wp_send_json_error( $error_message );
+		}
+
+		$image_processing_progress = get_option( 'wpmdc_image_processing_progress' );
+		wp_send_json_success( $image_processing_progress );
+		die();
 	}
 
 	/**

@@ -9,3 +9,31 @@
 .wpmdc_attached_error {
     color: red !important;
 }
+
+/* Progress bar styling */
+.wpmdc_progress_container {
+    width: 100%; /* Full width of the parent container */
+    background-color: #f3f3f3; /* Light grey background */
+    border: 1px solid #ccc; /* Grey border */
+    border-radius: 4px; /* Rounded corners */
+    overflow: hidden; /* Ensures the progress bar doesn't overflow */
+    margin-top: 10px;
+}
+
+/* The actual progress bar */
+.wpmdc_progress_bar {
+    height: 20px; /* Height of the progress bar */
+    background-color: #4caf50; /* Green color for the filled portion */
+    text-align: center; /* Center text inside the progress bar */
+    line-height: 20px; /* Align text vertically */
+    color: white; /* White text color */
+    border-radius: 4px 0 0 4px; /* Rounded corners on the left */
+    transition: width 0.4s ease; /* Smooth transition for width changes */
+}
+
+.wpmdc_d_block {
+    display: block;
+}
+.wpmdc_d_none {
+    display: none;
+}

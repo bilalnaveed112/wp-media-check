@@ -1,11 +1,39 @@
 <?php
+/**
+ * WP_Image_Processing.php
+ *
+ * This file contains the WP_Image_Processing class
+ *
+ * @package wp-media-check
+ */
 
+/**
+ * WP_Image_Processing Class.
+ *
+ * This class extends WP_Background_Process to handle image processing tasks
+ * in the background, ensuring that long-running image processing operations
+ * do not block the main thread and can be performed asynchronously.
+ *
+ * @since 1.0.0
+ */
 class WP_Image_Processing extends WP_Background_Process {
 
+	/**
+	 * The type of process this class handles.
+	 *
+	 * @var string
+	 */
 	protected $action = 'wp_image_processing';
 
 	/**
-	 * settings tasks for getting attached posts.
+	 * The type of process this class handles.
+	 *
+	 * @var string
+	 */
+	public $meta_key = 'wpmdc_added_images';
+
+	/**
+	 * Settings tasks for getting attached posts.
 	 *
 	 * @param string $image_id rendering id of attachment.
 	 */
@@ -19,10 +47,19 @@ class WP_Image_Processing extends WP_Background_Process {
 	}
 
 	/**
-	 * Triger after completion of all tasks.
+	 * Called when the background process is finished.
+	 *
+	 * This method is called once all tasks have been processed. You can use
+	 * it to clean up, log results, or trigger any other final operations.
+	 *
+	 * @return void
 	 */
 	protected function complete() {
 		parent::complete();
+	}
+
+	public function check_if_queued() {
+		return $this->is_queued();
 	}
 
 
@@ -34,13 +71,11 @@ class WP_Image_Processing extends WP_Background_Process {
 	 * @return int|false The count of posts using the attachment or `false` if no posts are found.
 	 */
 	public function get_attached_posts( $image_id ) {
-		$cached_data = get_option( 'wpmdc_images_data', array() ); // Retrieve the cached data from options.
+		$saved_post_links = get_post_meta( $image_id, $this->meta_key, true ); // Retrieve the cached data from options.
 
 		// Check if the specific post ID exists in the cached data.
-		if ( isset( $cached_data[ $image_id ] ) ) {
-			if ( ! empty( $cached_data[ $image_id ]['links'] ) ) {
-				return $cached_data[ $image_id ]['links'];
-			}
+		if ( ! empty( $saved_post_links ) ) {
+			return $saved_post_links;
 		}
 		global $wpdb;
 
@@ -92,21 +127,16 @@ class WP_Image_Processing extends WP_Background_Process {
 			)
 		);
 
-		$post_edit_links    = array();
-		$existing_post_data = array();
-		$existing_posts     = array();
+		$post_edit_links = array();
+		$existing_posts  = array();
 		if ( ! empty( $featured_image_posts ) ) {
 			while ( $featured_image_posts->have_posts() ) {
 				$featured_image_posts->the_post();
 				$post_id = get_the_ID();
 				if ( ! in_array( $post_id, $existing_posts ) ) { //phpcs:ignore
-					$post_edit_links[]                            = '<a href="' . get_edit_post_link( $post_id ) . '">' . get_the_title() . '</a>';
-					$existing_post_data['featured_image_posts'][] = array(
-						'id'    => $post_id,
-						'title' => get_the_title( $post_id ),
-						'link'  => get_edit_post_link( $post_id ),
-					);
-					$existing_posts[]                             = $post_id;
+					$post_edit_links[] = '<a href="' . get_edit_post_link( $post_id ) . '">' . get_the_title() . '</a>';
+					$existing_posts[]  = $post_id;
+					$this->add_post_meta( $post_id, $image_id );
 				}
 			}
 		}
@@ -115,13 +145,9 @@ class WP_Image_Processing extends WP_Background_Process {
 			foreach ( $posts_with_image as $post ) {
 				$post_id = $post->ID;
 				if ( ! in_array( $post_id, $existing_posts ) ) { //phpcs:ignore
-					$post_edit_links[]                        = '<a href="' . get_edit_post_link( $post_id ) . '">' . $post->post_title . '</a> ';
-					$existing_post_data['posts_with_image'][] = array(
-						'id'    => $post_id,
-						'title' => $post->post_title,
-						'link'  => get_edit_post_link( $post_id ),
-					);
-					$existing_posts[]                         = $post_id;
+					$post_edit_links[] = '<a href="' . get_edit_post_link( $post_id ) . '">' . $post->post_title . '</a> ';
+					$existing_posts[]  = $post_id;
+					$this->add_post_meta( $post_id, $image_id );
 				}
 			}
 		}
@@ -130,14 +156,9 @@ class WP_Image_Processing extends WP_Background_Process {
 			foreach ( $meta_query as $meta ) {
 				$post_meta_id = $meta->post_id;
 				if ( ! in_array( $post_meta_id, $existing_posts ) ) { //phpcs:ignore
-					$post_edit_links[]                     = '<a href="' . get_edit_post_link( $post_meta_id ) . '">' . get_the_title( $post_meta_id ) . '  ( ' . get_post_status( $post_meta_id ) . ' ) </a>';
-					$existing_post_data['posts_in_meta'][] = array(
-						'id'     => $post_meta_id,
-						'title'  => get_the_title( $post_meta_id ),
-						'status' => get_post_status( $post_meta_id ),
-						'link'   => get_edit_post_link( $post_meta_id ),
-					);
-					$existing_posts[]                      = $post_meta_id;
+					$post_edit_links[] = '<a href="' . get_edit_post_link( $post_meta_id ) . '">' . get_the_title( $post_meta_id ) . '  ( ' . get_post_status( $post_meta_id ) . ' ) </a>';
+					$existing_posts[]  = $post_meta_id;
+					$this->add_post_meta( $post_meta_id, $image_id );
 				}
 			}
 		}
@@ -146,11 +167,8 @@ class WP_Image_Processing extends WP_Background_Process {
 			foreach ( $options_query as $option ) {
 				$option_name = $option->option_name;
 				if ( ! in_array( $option_name, $existing_posts ) && $option_name !== 'wpmdc_images_data' ) { //phpcs:ignore
-					$post_edit_links[]               = 'Option name : <strong>' . esc_html( $option_name ) . '</strong>';
-					$existing_post_data['options'][] = array(
-						'name' => $option_name,
-					);
-					$existing_posts[]                = $option_name;
+					$post_edit_links[] = 'Option name : <strong>' . esc_html( $option_name ) . '</strong>';
+					$existing_posts[]  = $option_name;
 				}
 			}
 		}
@@ -159,27 +177,37 @@ class WP_Image_Processing extends WP_Background_Process {
 			foreach ( $term_meta_query as $term ) {
 				$term_id = $term->term_id;
 				if ( ! in_array( $term_id, $existing_posts ) ) { //phpcs:ignore
-					$term_info                     = get_term( $term_id );
-					$term_name                     = $term_info->name;
-					$taxonomy                      = $term_info->taxonomy;
-					$post_edit_links[]             = 'Term : <a href="' . get_edit_term_link( $term_id, $taxonomy ) . '">' . $term_name . ' </a>';
-					$existing_post_data['terms'][] = array(
-						'id'       => $term_id,
-						'name'     => $term_info->name,
-						'taxonomy' => $term_info->taxonomy,
-						'link'     => get_edit_term_link( $term_id, $term_info->taxonomy ),
-					);
-					$existing_posts[]              = $term_id;
+					$term_info         = get_term( $term_id );
+					$term_name         = $term_info->name;
+					$taxonomy          = $term_info->taxonomy;
+					$post_edit_links[] = 'Term : <a href="' . get_edit_term_link( $term_id, $taxonomy ) . '">' . $term_name . ' </a>';
+					$existing_posts[]  = $term_id;
+					$this->add_term_meta( $term_id, $image_id );
 				}
 			}
 		}
 		wp_reset_postdata();
-		if ( ! empty( $existing_post_data ) && ! empty( $post_edit_links ) ) {
-			$cached_data[ $image_id ]['data']  = $existing_post_data;
-			$cached_data[ $image_id ]['links'] = $post_edit_links;
-			update_option( 'wpmdc_images_data', $cached_data );
+		if ( ! empty( $post_edit_links ) ) {
+			update_post_meta( $image_id, $this->meta_key, $post_edit_links );
 		}
-
 		return $post_edit_links;
+	}
+
+	public function add_post_meta( $post_id, $image_id ) {
+		$existing_image_ids = get_post_meta( $post_id, $this->meta_key, true );
+		$existing_image_ids = is_array( $existing_image_ids ) ? $existing_image_ids : array();
+		if ( ! in_array( $image_id, $existing_image_ids ) ) {
+			$existing_image_ids[] = $image_id;
+			update_post_meta( $post_id, $this->meta_key, $existing_image_ids );
+		}
+	}
+
+	public function add_term_meta( $post_id, $image_id ) {
+		$existing_image_ids = get_term_meta( $post_id, $this->meta_key, true );
+		$existing_image_ids = is_array( $existing_image_ids ) ? $existing_image_ids : array();
+		if ( ! in_array( $image_id, $existing_image_ids ) ) {
+			$existing_image_ids[] = $image_id;
+			update_term_meta( $post_id, $this->meta_key, $existing_image_ids );
+		}
 	}
 }

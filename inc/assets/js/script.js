@@ -1,5 +1,8 @@
 jQuery(document).ready(function($) {
     const nonce = wpmdc_ajax_object.security;
+    const interval = 3000;
+    var checkStatusInterval;
+    var startInterVal = false;
 
     const checkImageUsage = (id) => {
         // Perform an AJAX request to check if the attachment is used
@@ -23,8 +26,43 @@ jQuery(document).ready(function($) {
         checkImageUsage(attachmentId);
     }
 
+    const updateProgressBar = () => {
+
+        percentage = jQuery('.wpmdc_progress_bar').text();
+        numericValue = percentage.replace('%', '');
+        percentage = parseFloat(numericValue);
+        if (percentage < 100) {
+            let data = {
+                action: 'check_progress_status',
+                security: nonce,
+            };
+            $.ajax({
+                type: 'POST',
+                url: ajaxurl,
+                data,
+                success(response){
+                    if ( response.success ) {
+                        percentage = (response.data.processed / response.data.total) * 100;
+                        jQuery('.wpmdc_progress_bar').css('width', percentage + '%').text(percentage + '%');
+                        if ( response.data.processed == response.data.total ) {
+                            clearInterval( checkStatusInterval );
+                            startInterVal = false;
+                        }
+                    }
+                },
+                error(response){
+                    console.log(response);
+                }
+            });
+        } else {
+            clearInterval( checkStatusInterval );
+            startInterVal = false;
+        }
+    }
+
     const processAllImages = (e) => {
         e.preventDefault();
+        $(e.target).prop('disabled', true);
         const data = {
             action: 'process_all_images',
             security: nonce,
@@ -34,7 +72,9 @@ jQuery(document).ready(function($) {
             url: ajaxurl,
             data,
             success(response){
-                console.log(response);
+                $('.wpmdc_progress_container').removeClass('wpmdc_d_none').addClass('wpmdc_d_block');
+                checkStatusInterval = setInterval(updateProgressBar, 3000);
+                startInterVal = true;
             },
             error(xhr) {
                 console.log(xhr);
@@ -58,6 +98,8 @@ jQuery(document).ready(function($) {
                 }
             }
         });
+
+        checkStatusInterval = setInterval(updateProgressBar, interval);
 
     })();
     // wp.media.editor.insert = function (html) {
