@@ -38,11 +38,13 @@ class WP_Image_Processing extends WP_Background_Process {
 	 * @param string $image_id rendering id of attachment.
 	 */
 	protected function task( $image_id ) {
-		$this->get_attached_posts( $image_id );
 		$progress = get_option( 'wpmdc_image_processing_progress' );
-		++$progress['processed'];
-		--$progress['pending'];
-		update_option( 'wpmdc_image_processing_progress', $progress );
+		if ( $progress['total'] != $progress['processed'] ) {
+			$this->get_attached_posts( $image_id );
+			++$progress['processed'];
+			--$progress['pending'];
+			update_option( 'wpmdc_image_processing_progress', $progress );
+		}
 		return false;
 	}
 
@@ -58,10 +60,13 @@ class WP_Image_Processing extends WP_Background_Process {
 		parent::complete();
 	}
 
-	public function check_if_queued() {
-		return $this->is_queued();
+	public function check_if_processing() {
+		return $this->is_process_running();
 	}
 
+	public function cancel_processing() {
+		return $this->cancel_process();
+	}
 
 	/**
 	 * Retrieves the count of posts that use a specific attachment.
@@ -144,7 +149,7 @@ class WP_Image_Processing extends WP_Background_Process {
 		if ( ! empty( $posts_with_image ) ) {
 			foreach ( $posts_with_image as $post ) {
 				$post_id = $post->ID;
-				if ( ! in_array( $post_id, $existing_posts ) ) { //phpcs:ignore
+				if ( ! in_array( $post_id, $existing_posts ) && $post->post_type != 'attachment' && $post->post_type != 'revision' ) { //phpcs:ignore
 					$post_edit_links[] = '<a href="' . get_edit_post_link( $post_id ) . '">' . $post->post_title . '</a> ';
 					$existing_posts[]  = $post_id;
 					$this->add_post_meta( $post_id, $image_id );
@@ -154,8 +159,9 @@ class WP_Image_Processing extends WP_Background_Process {
 
 		if ( ! empty( $meta_query ) ) {
 			foreach ( $meta_query as $meta ) {
-				$post_meta_id = $meta->post_id;
-				if ( ! in_array( $post_meta_id, $existing_posts ) ) { //phpcs:ignore
+				$post         = get_post( $meta );
+				$post_meta_id = $post->ID;
+				if ( $post_meta_id && ! in_array( $post_meta_id, $existing_posts ) && $post->post_type != 'attachment' && $post->post_type != 'revision' && $post_meta_id != $image_id ) { //phpcs:ignore
 					$post_edit_links[] = '<a href="' . get_edit_post_link( $post_meta_id ) . '">' . get_the_title( $post_meta_id ) . '  ( ' . get_post_status( $post_meta_id ) . ' ) </a>';
 					$existing_posts[]  = $post_meta_id;
 					$this->add_post_meta( $post_meta_id, $image_id );
@@ -166,7 +172,7 @@ class WP_Image_Processing extends WP_Background_Process {
 		if ( ! empty( $options_query ) ) {
 			foreach ( $options_query as $option ) {
 				$option_name = $option->option_name;
-				if ( ! in_array( $option_name, $existing_posts ) && $option_name !== 'wpmdc_images_data' ) { //phpcs:ignore
+				if ( ! in_array( $option_name, $existing_posts ) && $option_name !== 'wpmdc_images_data' && strpos( $option_name, 'wp_wp_image_processing_batch' ) !== 0 ) { //phpcs:ignore
 					$post_edit_links[] = 'Option name : <strong>' . esc_html( $option_name ) . '</strong>';
 					$existing_posts[]  = $option_name;
 				}

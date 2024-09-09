@@ -28,9 +28,16 @@ class WPSQR_WPMDC {
 	 *
 	 * @since    1.0.0
 	 * @access   private
-	 * @var      string    $instance
+	 * @var      object    $image_processor
 	 */
 	public $image_processor;
+
+	/**
+	 * Holds value truw or false for image process.
+	 *
+	 * @var string    $is_continue_image_processing
+	 */
+	public $is_continue_image_processing;
 
 	/**
 	 * Define the core functionality of the plugin.
@@ -39,21 +46,31 @@ class WPSQR_WPMDC {
 	 */
 	public function __construct() {
 
+		// Loading files.
 		$this->load_dependencies();
-
 		add_action( 'admin_enqueue_scripts', array( $this, 'enqueue_assets' ) );
+		// $this->image_processor->cancel_processing();
+
+		// Adding page for plugin.
+		add_action( 'admin_menu', array( $this, 'wpmdc_welcome_page' ) );
+		add_action( 'admin_init', array( $this, 'wpmdc_redirect_on_activation' ) );
+
+		// Adding media row actions.
 		add_filter( 'media_row_actions', array( $this, 'restrict_media_deletion_remove_delete_action' ), 10, 2 );
 		add_action( 'wp_ajax_check_attachment_usage', array( $this, 'check_attachment_usage' ) );
 		add_filter( 'manage_media_columns', array( $this, 'add_attached_objects_column' ) );
 		add_action( 'manage_media_custom_column', array( $this, 'populate_attached_objects_column' ), 10, 2 );
 		add_filter( 'attachment_fields_to_edit', array( $this, 'add_custom_media_field' ), 10, 2 );
+
+		// Cache invalidation.
 		add_action( 'save_post', array( $this, 'invalidate_cache_on_update' ), 10, 1 );
 		add_action( 'delete_post', array( $this, 'invalidate_cache_on_update' ), 10, 1 );
 		add_action( 'edited_term', array( $this, 'invalidate_cache_on_update' ), 10, 1 );
 		add_action( 'deleted_term', array( $this, 'invalidate_cache_on_update' ), 10, 1 );
+
+		// Handling ajax requests.
 		add_action( 'wp_ajax_process_all_images', array( $this, 'wpmdc_process_all_images' ) );
-		add_action( 'admin_menu', array( $this, 'wpmdc_welcome_page' ) );
-		add_action( 'admin_init', array( $this, 'wpmdc_redirect_on_activation' ) );
+		add_action( 'wp_ajax_cancel_image_processing', array( $this, 'wpmdc_cancel_image_processing' ) );
 		add_action( 'wp_ajax_check_progress_status', array( $this, 'wpmdc_check_progress_status' ) );
 	}
 
@@ -91,7 +108,10 @@ class WPSQR_WPMDC {
 		wp_localize_script(
 			'wpsqr-wpmdc-script',
 			'wpmdc_ajax_object',
-			array( 'security' => wp_create_nonce( 'wpsqr_ajax_nonce' ) ),
+			array(
+				'security'           => wp_create_nonce( 'wpsqr_ajax_nonce' ),
+				'is_process_running' => $this->is_continue_image_processing,
+			),
 		);
 	}
 
@@ -104,7 +124,8 @@ class WPSQR_WPMDC {
 		 * Retereving image processor.
 		 */
 		require_once WPSQR_WPMDC_DIR_PATH . 'inc/class-wp-image-processing.php';
-		$this->image_processor = new \WP_Image_Processing();
+		$this->image_processor              = new \WP_Image_Processing();
+		$this->is_continue_image_processing = $this->image_processor->check_if_processing();
 	}
 
 	/**
@@ -149,8 +170,7 @@ class WPSQR_WPMDC {
 		$total_images_sql = "SELECT COUNT(*) FROM $wpdb->posts WHERE post_type = 'attachment'";
 		$total_images     = (int) $wpdb->get_var( $total_images_sql ); //phpcs:ignore
 
-		$meta_key                 = $this->image_processor->meta_key; // Replace with your actual meta key.
-		$wpmdc_progress_bar_class = $this->image_processor->check_if_queued() ? 'wpmdc_d_block' : 'wpmdc_d_none';
+		$meta_key = $this->image_processor->meta_key; // Replace with your actual meta key.
 
 		// SQL query to count images with a specific meta key.
 		$count_images_sql = $wpdb->prepare(
@@ -162,7 +182,7 @@ class WPSQR_WPMDC {
 		);
 
 		// Get the count of images.
-		$total_images_with_meta_key = (int) $wpdb->get_var( $count_images_sql );
+		$total_images_with_meta_key = (int) $wpdb->get_var( $count_images_sql ); //phpcs:ignore
 		$image_processing_progress  = get_option( 'wpmdc_image_processing_progress' );
 
 		// Initialize the image processing progress option if it doesn't already exist.
@@ -172,26 +192,30 @@ class WPSQR_WPMDC {
 			'pending'   => $total_images - $total_images_with_meta_key,
 		);
 
-		$total_processed = ( $total_images_with_meta_key / $total_images ) * 100;
+		$total_processed = round( ( ( $total_images_with_meta_key / $total_images ) * 100 ) );
 		update_option( 'wpmdc_image_processing_progress', $image_processing_progress );
 		$processed_images = $image_processing_progress['processed'] ? $image_processing_progress['processed'] : 0;
 		$pending_images   = $image_processing_progress['pending'] ? $image_processing_progress['pending'] : 0;
+
+		// Showing progress bar if images are pending.
+		$wpmdc_button_disabling  = ( $this->is_continue_image_processing || $pending_images == 0 ) ? 'disabled' : '';
+		$wpmdc_button_displaying = $this->is_continue_image_processing ? 'wpmdc_d_block' : 'wpmdc_d_none';
 		?>
 		<div class="wrap">
 			<h1><?php esc_html_e( 'Welcome to Media Check Plugin', 'wp-media-check' ); ?></h1>
 			<p><?php esc_html_e( 'Thank you for installing ! Here is how to get started...', 'wp-media-check' ); ?></p>
+			<p><?php esc_html_e( 'Estimate processing time is 30 to 40 minutes.', 'wp-media-check' ); ?></p>
 			<div id="wpmdc-image-processing-progress">
 				<p><?php esc_html_e( 'Total Images:', 'wp-media-check' ); ?><span id="total-images"><?php esc_html_e( $total_images ); // phpcs:ignore?></span></p> 
 				<p><?php esc_html_e( 'Processed:', 'wp-media-check' ); ?><span id="processed-images"><?php esc_html_e( $processed_images ); // phpcs:ignore ?></span></p>
 				<p><?php esc_html_e( 'Pending:', 'wp-media-check' ); ?><span id="pending-images"><?php esc_html_e( $pending_images ); // phpcs:ignore ?></span></p>
 			</div>
-			<button class="button button-primary process_all_images"><?php esc_html_e( 'Process All Images', 'wp-media-check' ); ?></button>
-			<!-- <button class="button button-primary pause-process" ><?php esc_html_e( 'Pause Processing', 'wp-media-check' ); ?></button>
-			<button class="button button-primary resume-process" ><?php esc_html_e( 'Resume Processing', 'wp-media-check' ); ?></button> -->
-			<!-- <button class="button button-primary cancel-process" ><?php esc_html_e( 'Cancel Processing', 'wp-media-check' ); ?></button> -->
-			<div class="wpmdc_progress_container <?php echo esc_attr( $wpmdc_progress_bar_class ); ?>">
-				<div class="wpmdc_progress_bar" style="width: <?php echo $total_processed; ?>%;"><?php echo $total_processed; ?></div>
+			<button class="button button-primary process_all_images" <?php echo esc_attr( $wpmdc_button_disabling ); ?>><?php esc_html_e( 'Process All Images', 'wp-media-check' ); ?></button>
+			<button class="button button-primary cancel_process <?php echo esc_attr( $wpmdc_button_displaying ); ?>" ><?php esc_html_e( 'Cancel Processing', 'wp-media-check' ); ?></button>
+			<div class="wpmdc_progress_container">
+				<div class="wpmdc_progress_bar" style="width: <?php echo esc_attr( $total_processed ); ?>%;"><?php esc_html_e( $total_processed ); ?>%</div>
 			</div>
+			<!-- <p><?php echo ( $processed_images . ' / ' . $total_images ); ?></p> -->
 		</div>
 		<?php
 	}
@@ -338,27 +362,31 @@ class WPSQR_WPMDC {
 		}
 
 		// Get all image IDs from the database.
-		// $args   = array(
-		// 	'post_type'      => 'attachment',
-		// 	'post_status'    => 'inherit',
-		// 	'posts_per_page' => -1, // Retrieve all attachments.
-		// 	'fields'         => 'ids', // Only retrieve IDs.
-		// 	'meta_query'     => array(
-		// 		array(
-		// 			'key'     => $this->image_processor->meta_key,
-		// 			'compare' => 'NOT EXISTS',
-		// 		),
-		// 	),
-		// );
-		// $images = get_posts( $args );
+		$args   = array(
+			'post_type'      => 'attachment',
+			'post_status'    => 'inherit',
+			'posts_per_page' => -1, // Retrieve all attachments.
+			'fields'         => 'ids', // Only retrieve IDs.
+			'meta_query'     => array(
+				array(
+					'key'     => $this->image_processor->meta_key,
+					'compare' => 'NOT EXISTS',
+				),
+			),
+		);
+		$images = get_posts( $args );
 
-		// // Add each image to the background queue.
-		// foreach ( $images as $image_id ) {
-		// 	$this->image_processor->push_to_queue( $image_id );
-		// }
+		// Add each image to the background queue.
+		if ( ! empty( $images ) ) {
+			foreach ( $images as $image_id ) {
+				$this->image_processor->push_to_queue( $image_id );
+			}
+			// Dispatch the queue.
+			$this->image_processor->save()->dispatch();
+		} else {
+			$this->image_processor->cancel_processing();
+		}
 
-		// // Dispatch the queue.
-		// $this->image_processor->save()->dispatch();
 		wp_send_json( true );
 		exit;
 	}
@@ -471,6 +499,9 @@ class WPSQR_WPMDC {
 		return $attachment_id ? $attachment_id : 0;
 	}
 
+	/**
+	 * Checking status of running background process.
+	 */
 	public function wpmdc_check_progress_status() {
 		$wpmdc_nonce = filter_input( INPUT_POST, 'security', FILTER_SANITIZE_SPECIAL_CHARS );
 		if ( ! wp_verify_nonce( $wpmdc_nonce, 'wpsqr_ajax_nonce' ) ) {
@@ -483,6 +514,25 @@ class WPSQR_WPMDC {
 		die();
 	}
 
+	/**
+	 * Cancel process of background process.
+	 */
+	public function wpmdc_cancel_image_processing() {
+		$wpmdc_nonce = filter_input( INPUT_POST, 'security', FILTER_SANITIZE_SPECIAL_CHARS );
+		if ( ! wp_verify_nonce( $wpmdc_nonce, 'wpsqr_ajax_nonce' ) ) {
+			$error_message = __( 'Authentication Error: Nonce verification failed.', 'wp-media-check' );
+			wp_send_json_error( $error_message );
+		}
+		if ( ! isset( $this->image_processor ) || ! method_exists( $this->image_processor, 'cancel_processing' ) ) {
+			wp_send_json_success( __( 'Error: Image processor not initialized.', 'wp-media-check' ) );
+			return;
+		}
+
+		$this->image_processor->cancel_processing();
+		$this->is_continue_image_processing = false;
+		$message                            = esc_html__( 'Process has been stopped.', 'wp-media-check' );
+		wp_send_json_success( $message );
+	}
 	/**
 	 * The singleton method
 	 */

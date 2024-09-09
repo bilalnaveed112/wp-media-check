@@ -1,5 +1,6 @@
 jQuery(document).ready(function($) {
     const nonce = wpmdc_ajax_object.security;
+    const is_process_running = wpmdc_ajax_object.is_process_running;
     const interval = 3000;
     var checkStatusInterval;
     var startInterVal = false;
@@ -42,10 +43,13 @@ jQuery(document).ready(function($) {
                 data,
                 success(response){
                     if ( response.success ) {
-                        percentage = (response.data.processed / response.data.total) * 100;
+                        percentage = Math.round(((response.data.processed / response.data.total) * 100));
                         jQuery('.wpmdc_progress_bar').css('width', percentage + '%').text(percentage + '%');
+                        jQuery('#processed-images').text(response.data.processed);
+                        jQuery('#pending-images').text(response.data.pending);
                         if ( response.data.processed == response.data.total ) {
                             clearInterval( checkStatusInterval );
+                            $('.process_all_images').prop('disabled', false);
                             startInterVal = false;
                         }
                     }
@@ -72,9 +76,31 @@ jQuery(document).ready(function($) {
             url: ajaxurl,
             data,
             success(response){
-                $('.wpmdc_progress_container').removeClass('wpmdc_d_none').addClass('wpmdc_d_block');
+                $('.cancel_process').removeClass('wpmdc_d_none');
                 checkStatusInterval = setInterval(updateProgressBar, 3000);
                 startInterVal = true;
+            },
+            error(xhr) {
+                console.log(xhr);
+            }
+        });
+    }
+
+    const cancelProcessingImages = (e) => {
+        e.preventDefault();
+        $(e.target).prop('disabled', true);
+        const data = {
+            action: 'cancel_image_processing',
+            security: nonce,
+        };
+        $.ajax({
+            type: 'POST',
+            url: ajaxurl,
+            data,
+            success(response){
+                $('.cancel_process').addClass('wpmdc_d_none');
+                $('.process_all_images').prop('disabled', false);
+                console.log(response.data);
             },
             error(xhr) {
                 console.log(xhr);
@@ -87,6 +113,8 @@ jQuery(document).ready(function($) {
         $(document).on('click', '.attachment', restrictDeleteButton);
 
         $(document).on('click', '.process_all_images', processAllImages);
+        
+        $(document).on('click', '.cancel_process', cancelProcessingImages);
 
         $(document).ajaxComplete(function(event, xhr, settings) {
             // Check if the action is 'query-attachments'
@@ -99,7 +127,9 @@ jQuery(document).ready(function($) {
             }
         });
 
-        checkStatusInterval = setInterval(updateProgressBar, interval);
+        if ( is_process_running ) {
+            checkStatusInterval = setInterval(updateProgressBar, interval);
+        }
 
     })();
     // wp.media.editor.insert = function (html) {
