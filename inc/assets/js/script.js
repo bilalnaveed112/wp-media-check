@@ -66,7 +66,7 @@ jQuery(document).ready(function($) {
 
     const processAllImages = (e) => {
         e.preventDefault();
-        $(e.target).prop('disabled', true);
+        $('.process_all_images').prop('disabled', true);
         const data = {
             action: 'process_all_images',
             security: nonce,
@@ -76,9 +76,19 @@ jQuery(document).ready(function($) {
             url: ajaxurl,
             data,
             success(response){
-                $('.cancel_process').removeClass('wpmdc_d_none');
-                checkStatusInterval = setInterval(updateProgressBar, 3000);
-                startInterVal = true;
+                if ( response.success ){
+                    if ( response.data.status ) {
+                        checkStatusInterval = setInterval(updateProgressBar, 3000);
+                        $('.cancel_process').removeClass('wpmdc_d_none');
+                    } else {
+                        $('.process_all_images').prop('disabled', false);
+                    }
+                    $('.wpmdc_notification p').text(response.data.message);
+                    $('.wpmdc_notification').removeClass('wpmdc_d_none').fadeIn(400).delay(4000).fadeOut(400, function() {
+                        $(this).addClass('wpmdc_d_none');
+                    });
+                    startInterVal = true;
+                }
             },
             error(xhr) {
                 console.log(xhr);
@@ -89,6 +99,9 @@ jQuery(document).ready(function($) {
     const cancelProcessingImages = (e) => {
         e.preventDefault();
         $(e.target).prop('disabled', true);
+        let startCancelMsg = $('.wpmdc_start_cancel_msg').val();
+        $('.wpmdc_notification p').text(startCancelMsg);
+        $('.wpmdc_notification').removeClass('wpmdc_d_none').show();
         const data = {
             action: 'cancel_image_processing',
             security: nonce,
@@ -100,7 +113,12 @@ jQuery(document).ready(function($) {
             success(response){
                 $('.cancel_process').addClass('wpmdc_d_none');
                 $('.process_all_images').prop('disabled', false);
-                console.log(response.data);
+                $('.cancel_process').prop('disabled', false);
+                clearInterval( checkStatusInterval );
+                $('.wpmdc_notification p').text(response.data);
+                $('.wpmdc_notification').fadeIn(400).delay(4000).fadeOut(400, function() {
+                    $(this).addClass('wpmdc_d_none');
+                });
             },
             error(xhr) {
                 console.log(xhr);

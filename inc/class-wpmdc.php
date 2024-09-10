@@ -49,7 +49,6 @@ class WPSQR_WPMDC {
 		// Loading files.
 		$this->load_dependencies();
 		add_action( 'admin_enqueue_scripts', array( $this, 'enqueue_assets' ) );
-		// $this->image_processor->cancel_processing();
 
 		// Adding page for plugin.
 		add_action( 'admin_menu', array( $this, 'wpmdc_welcome_page' ) );
@@ -203,6 +202,9 @@ class WPSQR_WPMDC {
 		?>
 		<div class="wrap">
 			<h1><?php esc_html_e( 'Welcome to Media Check Plugin', 'wp-media-check' ); ?></h1>
+			<div id="message" class="notice updated wpmdc_d_none wpmdc_notification">
+				<p></p>
+			</div>
 			<p><?php esc_html_e( 'Thank you for installing ! Here is how to get started...', 'wp-media-check' ); ?></p>
 			<p><?php esc_html_e( 'Estimate processing time is 30 to 40 minutes.', 'wp-media-check' ); ?></p>
 			<div id="wpmdc-image-processing-progress">
@@ -215,6 +217,7 @@ class WPSQR_WPMDC {
 			<div class="wpmdc_progress_container">
 				<div class="wpmdc_progress_bar" style="width: <?php echo esc_attr( $total_processed ); ?>%;"><?php esc_html_e( $total_processed ); ?>%</div>
 			</div>
+			<input type="hidden" class="wpmdc_start_cancel_msg" value="<?php echo esc_attr( 'Cancellation process is in progress. please wait for a while.', 'wp-media-check' ); ?>">
 			<!-- <p><?php echo ( $processed_images . ' / ' . $total_images ); ?></p> -->
 		</div>
 		<?php
@@ -383,11 +386,12 @@ class WPSQR_WPMDC {
 			}
 			// Dispatch the queue.
 			$this->image_processor->save()->dispatch();
+			$message = __( 'Process has been started.' , 'wp-media-check' );
+			wp_send_json_success( array( 'status' => true, 'message' => $message) );
 		} else {
-			$this->image_processor->cancel_processing();
+			$message = __( 'All the images are already processed.' , 'wp-media-check' );
+			wp_send_json_success( array( 'status' => false, 'message' => $message) );
 		}
-
-		wp_send_json( true );
 		exit;
 	}
 
@@ -523,14 +527,20 @@ class WPSQR_WPMDC {
 			$error_message = __( 'Authentication Error: Nonce verification failed.', 'wp-media-check' );
 			wp_send_json_error( $error_message );
 		}
-		if ( ! isset( $this->image_processor ) || ! method_exists( $this->image_processor, 'cancel_processing' ) ) {
-			wp_send_json_success( __( 'Error: Image processor not initialized.', 'wp-media-check' ) );
-			return;
-		}
 
-		$this->image_processor->cancel_processing();
-		$this->is_continue_image_processing = false;
-		$message                            = esc_html__( 'Process has been stopped.', 'wp-media-check' );
+		$WP_Background_Process = new \WP_Image_Processing();
+		do {
+			try {
+				$WP_Background_Process->cancel_processing();
+				usleep( 500000 ); // 0.5 second delay.
+			} catch ( Exception $e ) {
+				error_log( 'Error while canceling processing: ' . $e->getMessage() );
+				wp_send_json_error( __( 'Error: Failed to cancel processing.', 'wp-media-check' ) );
+				return;
+			}
+			// Check if processing is still ongoing.
+		} while ( $WP_Background_Process->check_if_processing() );
+		$message = esc_html__( 'Image processing has been stopped.', 'wp-media-check' );
 		wp_send_json_success( $message );
 	}
 	/**

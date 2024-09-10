@@ -119,7 +119,7 @@ class WP_Image_Processing extends WP_Background_Process {
 		// 4. Check if the image is used in any options (widgets, theme settings, etc.).
 		$options_query = $wpdb->get_results( //phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching 
 			$wpdb->prepare(
-				"SELECT option_name FROM {$wpdb->options} WHERE option_value LIKE %s",
+				"SELECT option_name, option_value FROM {$wpdb->options} WHERE option_value LIKE %s",
 				'%' . $wpdb->esc_like( $image_id ) . '%'
 			)
 		);
@@ -171,10 +171,14 @@ class WP_Image_Processing extends WP_Background_Process {
 
 		if ( ! empty( $options_query ) ) {
 			foreach ( $options_query as $option ) {
-				$option_name = $option->option_name;
-				if ( ! in_array( $option_name, $existing_posts ) && $option_name !== 'wpmdc_images_data' && strpos( $option_name, 'wp_wp_image_processing_batch' ) !== 0 ) { //phpcs:ignore
-					$post_edit_links[] = 'Option name : <strong>' . esc_html( $option_name ) . '</strong>';
-					$existing_posts[]  = $option_name;
+				$option_name  = $option->option_name;
+				$option_value = $option->option_value;
+				$post         = get_post( $option_value );
+				if ( $post && $post->post_type == 'attachment' ) {
+					if ( ! in_array( $option_name, $existing_posts ) && $option_name !== 'wpmdc_images_data' && strpos( $option_name, 'wp_wp_image_processing_batch' ) !== 0 ) { //phpcs:ignore
+						$post_edit_links[] = 'Option name : <strong>' . esc_html( $option_name ) . '</strong>';
+						$existing_posts[]  = $option_name;
+					}
 				}
 			}
 		}
