@@ -20,21 +20,157 @@
     margin-top: 10px;
 }
 
-/* The actual progress bar */
-.wpmdc_progress_bar {
-    height: 20px; /* Height of the progress bar */
-    background-color: #4caf50; /* Green color for the filled portion */
-    text-align: center; /* Center text inside the progress bar */
-    line-height: 20px; /* Align text vertically */
-    color: white; /* White text color */
-    border-radius: 4px 0 0 4px; /* Rounded corners on the left */
-    transition: width 0.4s ease; /* Smooth transition for width changes */
-    padding: 5px 0;
-}
 
+
+/* General Style Start */
+
+.message_wrapper {
+    height: 40px;
+}
 .wpmdc_d_block {
     display: block;
 }
 .wpmdc_d_none {
     display: none !important;
 }
+
+.wpmdc_d__inline-block {
+    display: inline-block;
+}
+
+.wpmdc_d__flex {
+    display: flex;
+}
+
+.wpmdc_justify--center {
+    justify-content: center;
+}
+
+.wpmdc_justify--betwen {
+    justify-content: space-between;
+}
+
+.wpmdc_align--center {
+    align-items: center;
+}
+
+.wpmdc_d__flex--center--center {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+}
+
+.wpmdc_flex__direction--column {
+    flex-direction: column;
+}
+/* General Style End */
+
+.wpmdc_box__summary {
+    padding-inline: 15px;
+    margin-bottom: 30px;
+    background-color: #ffffff;
+}
+
+.wpmdc_summary__image__space {
+    margin: 20px 10px;
+    padding-inline: 15px;
+    min-width: 400px;
+    min-height: 250px;
+    background-color: #f8f8f8;
+}
+
+/* Progress Bar Start*/
+.wpmdc_circle__score {
+    position: relative;
+    width: 150px;
+    height: 150px;
+}
+
+.wpmdc_circle__score svg {
+    transform: rotate(-90deg); /* Rotate to start progress from top */
+}
+
+.wpmdc_score__background--circle,
+.wpmdc_score__progress--circle {
+    fill: none;
+    stroke-width: .75rem;
+}
+
+.wpmdc_score__background--circle {
+    stroke: #e6e6e6;
+}
+
+.wpmdc_score__progress--circle {
+    stroke: #4caf50; /* Color of the progress circle */
+    stroke-dasharray: 264; /* Circumference of the circle: 2 * π * radius (2 * π * 42) */
+    stroke-dashoffset: 264; /* Circumference - (Progress percentage * Circumference) */
+    transition: stroke-dashoffset 2s ease; /* Smooth transition for progress change */
+}
+
+.wpmdc_score__pregress--percentage {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    font-size: 1.75rem;
+    font-weight: bold;
+}
+/* Progress Bar End */
+
+.wpmdc_summary__segment {
+    padding-inline: 15px;
+    flex: 1;
+}
+
+.wpmdc_summary__detail {
+    padding: 30px;
+}
+
+.wpmdc_summary__group {
+    padding: 1rem 0;
+}
+
+.wpmdc_summary__group.wpmdc_summary__actions {
+    border-top: 1px solid #e6e6e6;
+}
+
+.wpmdc_summary__count {
+    font-size: 1.5rem;
+    font-weight: bold;
+    line-height: 1.25;
+}
+
+.wpmdc_summary__total__images {
+    color: #9e9e9e;
+    font-size: 1rem;
+}
+
+.wpmdc_summary__total__images::before {
+    content: " / ";
+}
+
+.wpmdc_summary__text {
+    margin-bottom: 1rem;
+}
+
+/* Action Butons Style Start  */
+.wpmdc_summary__group.wpmdc_summary__actions .button.cancel_process {
+    color: #b32d2e;
+    border-color: #b32d2e;
+}
+
+.wpmdc_summary__group.wpmdc_summary__actions .button.cancel_process:hover {
+    background-color: #b32d2e;
+    border-color: #b32d2e;
+    color: #ffffff;
+}
+/* Action Butons Style End  */
+
+/* Notification Start  */
+
+.wpmdc_notification { /* Ensure it's hidden initially */
+    opacity: 0;    /* Start with fully transparent */
+    transition: opacity .5s ease; /* Smooth transition for opacity */
+}
+
+/* Notification End  */

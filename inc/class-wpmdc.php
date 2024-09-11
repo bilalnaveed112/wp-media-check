@@ -104,12 +104,17 @@ class WPSQR_WPMDC {
 	 */
 	public function enueue_scripts() {
 		wp_enqueue_script( 'wpsqr-wpmdc-script', WPSQR_WPMDC_DIR_URL . 'inc/assets/js/script.js', array( 'jquery' ), WPSQR_WPMDC_VERSION, true );
+		$image_processing_progress = get_option( 'wpmdc_image_processing_progress' );
+		if ( $image_processing_progress ) {
+			$total_processed = round( ( ( $image_processing_progress['processed'] / $image_processing_progress['total'] ) * 100 ) );
+		}
 		wp_localize_script(
 			'wpsqr-wpmdc-script',
 			'wpmdc_ajax_object',
 			array(
 				'security'           => wp_create_nonce( 'wpsqr_ajax_nonce' ),
 				'is_process_running' => $this->is_continue_image_processing,
+				'processed_images'   => $total_processed ? $total_processed : 0,
 			),
 		);
 	}
@@ -202,23 +207,52 @@ class WPSQR_WPMDC {
 		?>
 		<div class="wrap">
 			<h1><?php esc_html_e( 'Welcome to Media Check Plugin', 'wp-media-check' ); ?></h1>
-			<div id="message" class="notice updated wpmdc_d_none wpmdc_notification">
-				<p></p>
-			</div>
+				<div id="message" class="notice updated wpmdc_notification">
+					<p><?php esc_html_e( 'Successfully installed plugin', 'wp-media-check' ) ?></p>
+				</div>
 			<p><?php esc_html_e( 'Thank you for installing ! Here is how to get started...', 'wp-media-check' ); ?></p>
-			<p><?php esc_html_e( 'Estimate processing time is 30 to 40 minutes.', 'wp-media-check' ); ?></p>
-			<div id="wpmdc-image-processing-progress">
-				<p><?php esc_html_e( 'Total Images:', 'wp-media-check' ); ?><span id="total-images"><?php esc_html_e( $total_images ); // phpcs:ignore?></span></p> 
-				<p><?php esc_html_e( 'Processed:', 'wp-media-check' ); ?><span id="processed-images"><?php esc_html_e( $processed_images ); // phpcs:ignore ?></span></p>
-				<p><?php esc_html_e( 'Pending:', 'wp-media-check' ); ?><span id="pending-images"><?php esc_html_e( $pending_images ); // phpcs:ignore ?></span></p>
-			</div>
-			<button class="button button-primary process_all_images" <?php echo esc_attr( $wpmdc_button_disabling ); ?>><?php esc_html_e( 'Process All Images', 'wp-media-check' ); ?></button>
-			<button class="button button-primary cancel_process <?php echo esc_attr( $wpmdc_button_displaying ); ?>" ><?php esc_html_e( 'Cancel Processing', 'wp-media-check' ); ?></button>
-			<div class="wpmdc_progress_container">
-				<div class="wpmdc_progress_bar" style="width: <?php echo esc_attr( $total_processed ); ?>%;"><?php esc_html_e( $total_processed ); ?>%</div>
-			</div>
 			<input type="hidden" class="wpmdc_start_cancel_msg" value="<?php echo esc_attr( 'Cancellation process is in progress. please wait for a while.', 'wp-media-check' ); ?>">
-			<!-- <p><?php echo ( $processed_images . ' / ' . $total_images ); ?></p> -->
+
+			<!-- New design Start -->
+
+			<div class="wpmdc_box__summary wpmdc_d__flex wpmdc_align--center">
+				<div class="wpmdc_summary__image__space wpmdc_d__flex--center--center wpmdc_flex__direction--column">
+					<div class="wpmdc_circle__score">
+						<svg viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg">
+							<circle class="wpmdc_score__background--circle" cx="50" cy="50" r="42"></circle>
+							<circle class="wpmdc_score__progress--circle" cx="50" cy="50" r="42" style=""></circle>
+						</svg>
+						<span class="wpmdc_score__pregress--percentage wpmdc_progress_bar"><?php esc_html_e( $total_processed ); ?>%</span>
+					</div>
+					<p class="wpmdc__progress__text"><?php esc_html_e( 'Images processed', 'wp-media-check'); ?></p>
+				</div>
+				<div class="wpmdc_summary__segment">
+					<div class="wpmdc_summary__detail wpmdc_d__flex wpmdc_flex__direction--column">
+						<div class="wpmdc_summary__group">
+							<span class="wpmdc_summary__count wpmdc_summary__processed__images wpmdc_d_block "><span id="processed-images"><?php esc_html_e( $processed_images );?></span><small class="wpmdc_summary__total__images"><span id="total-images"><?php esc_html_e( $total_images );?></span></small> </span>
+							<span class="wpmdc_summary__text wpmdc_summary__processed__images--text wpmdc_d_block"><?php esc_html_e( 'Processed Images', 'wp-media-check' ); ?></span>
+						</div>
+						<div class="wpmdc_summary__group">
+							<span class="wpmdc_summary__count wpmdc_summary__pending__images wpmdc_d_block " id="pending-images"><?php esc_html_e( $pending_images );?></span>
+							<span class="wpmdc_summary__text wpmdc_summary__pending__images--text wpmdc_d_block"><?php esc_html_e( 'Pending Images', 'wp-media-check' ); ?></span>
+						</div>
+					</div>
+				</div>
+				<div class="wpmdc_summary__segment">
+					<div class="wpmdc_summary__detail wpmdc_d__flex wpmdc_flex__direction--column">
+						<div class="wpmdc_summary__group">
+							<span class="wpmdc_summary__text wpmdc_summary__total__images--text wpmdc_d_block"><?php esc_html_e( 'Estimate processing time', 'wp-media-check' ); ?><strong class="wpmdc_d_block">30 to 40 minutes</strong></span>
+						</div>
+						<div class="wpmdc_summary__group wpmdc_summary__actions wpmdc_d__flex wpmdc_justify--betwen">
+							<button type="button" class="button button-primary button-large process_all_images" <?php echo esc_attr( $wpmdc_button_disabling ); ?>><?php esc_html_e( 'Start Processing', 'wp-media-check' ); ?></button>
+							<button type="button" class="button button-large cancel_process <?php echo esc_attr( $wpmdc_button_displaying ); ?>"><?php esc_html_e( 'Cancel', 'wp-media-check' ); ?></button>
+						</div>
+						
+					</div>
+				</div>
+			</div>
+
+			<!-- new design end  -->
 		</div>
 		<?php
 	}

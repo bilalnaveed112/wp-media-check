@@ -1,9 +1,13 @@
 jQuery(document).ready(function($) {
     const nonce = wpmdc_ajax_object.security;
     const is_process_running = wpmdc_ajax_object.is_process_running;
+    var processed_images = wpmdc_ajax_object.processed_images;
+    var $notification = jQuery('.wpmdc_notification');
     const interval = 3000;
     var checkStatusInterval;
     var startInterVal = false;
+    var isNumberCounterLoaded = false;
+    var lastProcessed;
 
     const checkImageUsage = (id) => {
         // Perform an AJAX request to check if the attachment is used
@@ -44,12 +48,18 @@ jQuery(document).ready(function($) {
                 success(response){
                     if ( response.success ) {
                         percentage = Math.round(((response.data.processed / response.data.total) * 100));
-                        jQuery('.wpmdc_progress_bar').css('width', percentage + '%').text(percentage + '%');
-                        jQuery('#processed-images').text(response.data.processed);
-                        jQuery('#pending-images').text(response.data.pending);
+                        if ( lastProcessed != response.data.processed ) {
+                            updateProgressCircle( percentage );
+                            jQuery('#processed-images').text(response.data.processed);
+                            jQuery('#pending-images').text(response.data.pending);
+                            lastProcessed = response.data.processed;
+                        } else {
+                            clearInterval( checkStatusInterval );
+                        }
                         if ( response.data.processed == response.data.total ) {
                             clearInterval( checkStatusInterval );
                             $('.process_all_images').prop('disabled', false);
+                            $('.cancel_process').addClass('wpmdc_d_none');
                             startInterVal = false;
                         }
                     }
@@ -78,15 +88,16 @@ jQuery(document).ready(function($) {
             success(response){
                 if ( response.success ){
                     if ( response.data.status ) {
-                        checkStatusInterval = setInterval(updateProgressBar, 3000);
+                        checkStatusInterval = setInterval(updateProgressBar, 10000);
                         $('.cancel_process').removeClass('wpmdc_d_none');
                     } else {
                         $('.process_all_images').prop('disabled', false);
                     }
                     $('.wpmdc_notification p').text(response.data.message);
-                    $('.wpmdc_notification').removeClass('wpmdc_d_none').fadeIn(400).delay(4000).fadeOut(400, function() {
-                        $(this).addClass('wpmdc_d_none');
-                    });
+                    $notification
+                    .animate({ opacity: 1 }, 400)
+                    .delay(4000)
+                    .animate({ opacity: 0 }, 400, function() { });
                     startInterVal = true;
                 }
             },
@@ -100,12 +111,13 @@ jQuery(document).ready(function($) {
         e.preventDefault();
         $(e.target).prop('disabled', true);
         let startCancelMsg = $('.wpmdc_start_cancel_msg').val();
-        $('.wpmdc_notification p').text(startCancelMsg);
-        $('.wpmdc_notification').removeClass('wpmdc_d_none').show();
-        const data = {
-            action: 'cancel_image_processing',
-            security: nonce,
-        };
+            $('.wpmdc_notification p').text(startCancelMsg);
+            $notification
+            .animate({ opacity: 1 }, 400);
+            const data = {
+                action: 'cancel_image_processing',
+                security: nonce,
+            };
         $.ajax({
             type: 'POST',
             url: ajaxurl,
@@ -116,9 +128,10 @@ jQuery(document).ready(function($) {
                 $('.cancel_process').prop('disabled', false);
                 clearInterval( checkStatusInterval );
                 $('.wpmdc_notification p').text(response.data);
-                $('.wpmdc_notification').fadeIn(400).delay(4000).fadeOut(400, function() {
-                    $(this).addClass('wpmdc_d_none');
-                });
+                $notification
+                .animate({ opacity: 1 }, 400)
+                .delay(4000)
+                .animate({ opacity: 0 }, 400, function() { });
             },
             error(xhr) {
                 console.log(xhr);
@@ -126,7 +139,32 @@ jQuery(document).ready(function($) {
         });
     }
 
+    const updateProgressCircle = ( percentage ) => {
+        percentage = Math.max(0, Math.min(100, percentage));
+        const radius = 42;
+        const circumference = 2 * Math.PI * radius;
+        const strokeDashoffset = circumference - (percentage / 100) * circumference;
+        $('.wpmdc_score__progress--circle').css('stroke-dashoffset', strokeDashoffset);
+        if ( !isNumberCounterLoaded ) {
+            $('.wpmdc_progress_bar').prop('Counter', 0).animate({
+                Counter: percentage
+            }, {
+                duration: 2000,
+                easing: 'swing',
+                step: function (now) {
+                    // Update the text
+                    $(this).text(Math.ceil(now) + '%');
+                }
+            });
+            isNumberCounterLoaded = true;
+        } else {
+            $('.wpmdc_progress_bar').text(percentage + '%');
+        }
+    }
+
     (function bindEvents() {
+
+        updateProgressCircle( processed_images );
         // Bind the function to the media library's grid view events
         $(document).on('click', '.attachment', restrictDeleteButton);
 
