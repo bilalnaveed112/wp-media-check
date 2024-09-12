@@ -157,8 +157,8 @@ class WPSQR_WPMDC {
 	 */
 	public function wpmdc_welcome_page() {
 		add_management_page(
-			'Welcome to WP Media Check',
-			'Media Check',
+			esc_html( 'Welcome to WP Media Check', 'wp-media-check' ),
+			esc_html( 'Media Check', 'wp-media-check' ),
 			'manage_options',
 			'wp_media_check',
 			array( $this, 'wpmdc_page_content' ),
@@ -169,24 +169,10 @@ class WPSQR_WPMDC {
 	 * Welcome Page Content of plugin.
 	 */
 	public function wpmdc_page_content() {
-		global $wpdb;
-		// Query to count the total number of attachment posts (images) in the database.
-		$total_images_sql = "SELECT COUNT(*) FROM $wpdb->posts WHERE post_type = 'attachment'";
-		$total_images     = (int) $wpdb->get_var( $total_images_sql ); //phpcs:ignore
 
-		$meta_key = $this->image_processor->meta_key; // Replace with your actual meta key.
-
-		// SQL query to count images with a specific meta key.
-		$count_images_sql = $wpdb->prepare(
-			"SELECT COUNT(*) FROM {$wpdb->posts} p
-			INNER JOIN {$wpdb->postmeta} pm ON p.ID = pm.post_id
-			WHERE p.post_type = 'attachment'
-			AND pm.meta_key = %s",
-			$meta_key
-		);
-
-		// Get the count of images.
-		$total_images_with_meta_key = (int) $wpdb->get_var( $count_images_sql ); //phpcs:ignore
+		$total_images               = $this->get_all_images();
+		$meta_key                   = $this->image_processor->meta_key; // Replace with your actual meta key.
+		$total_images_with_meta_key = $this->get_all_processed_images( $meta_key );
 		$image_processing_progress  = get_option( 'wpmdc_image_processing_progress' );
 
 		// Initialize the image processing progress option if it doesn't already exist.
@@ -204,11 +190,12 @@ class WPSQR_WPMDC {
 		// Showing progress bar if images are pending.
 		$wpmdc_button_disabling  = ( $this->is_continue_image_processing || $pending_images == 0 ) ? 'disabled' : '';
 		$wpmdc_button_displaying = $this->is_continue_image_processing ? 'wpmdc_d_block' : 'wpmdc_d_none';
+		$estimated_time = $this->get_estimated_time( $pending_images );
 		?>
 		<div class="wrap">
 			<h1><?php esc_html_e( 'Welcome to Media Check Plugin', 'wp-media-check' ); ?></h1>
 				<div id="message" class="notice updated wpmdc_notification">
-					<p><?php esc_html_e( 'Successfully installed plugin', 'wp-media-check' ) ?></p>
+					<p><?php esc_html_e( 'Successfully installed plugin', 'wp-media-check' ); ?></p>
 				</div>
 			<p><?php esc_html_e( 'Thank you for installing ! Here is how to get started...', 'wp-media-check' ); ?></p>
 			<input type="hidden" class="wpmdc_start_cancel_msg" value="<?php echo esc_attr( 'Cancellation process is in progress. please wait for a while.', 'wp-media-check' ); ?>">
@@ -224,16 +211,16 @@ class WPSQR_WPMDC {
 						</svg>
 						<span class="wpmdc_score__pregress--percentage wpmdc_progress_bar"><?php esc_html_e( $total_processed ); ?>%</span>
 					</div>
-					<p class="wpmdc__progress__text"><?php esc_html_e( 'Images processed', 'wp-media-check'); ?></p>
+					<p class="wpmdc__progress__text"><?php esc_html_e( 'Images processed', 'wp-media-check' ); ?></p>
 				</div>
 				<div class="wpmdc_summary__segment">
 					<div class="wpmdc_summary__detail wpmdc_d__flex wpmdc_flex__direction--column">
 						<div class="wpmdc_summary__group">
-							<span class="wpmdc_summary__count wpmdc_summary__processed__images wpmdc_d_block "><span id="processed-images"><?php esc_html_e( $processed_images );?></span><small class="wpmdc_summary__total__images"><span id="total-images"><?php esc_html_e( $total_images );?></span></small> </span>
+							<span class="wpmdc_summary__count wpmdc_summary__processed__images wpmdc_d_block "><span id="processed-images"><?php esc_html_e( $processed_images ); ?></span><small class="wpmdc_summary__total__images"><span id="total-images"><?php esc_html_e( $total_images ); ?></span></small> </span>
 							<span class="wpmdc_summary__text wpmdc_summary__processed__images--text wpmdc_d_block"><?php esc_html_e( 'Processed Images', 'wp-media-check' ); ?></span>
 						</div>
 						<div class="wpmdc_summary__group">
-							<span class="wpmdc_summary__count wpmdc_summary__pending__images wpmdc_d_block " id="pending-images"><?php esc_html_e( $pending_images );?></span>
+							<span class="wpmdc_summary__count wpmdc_summary__pending__images wpmdc_d_block " id="pending-images"><?php esc_html_e( $pending_images ); ?></span>
 							<span class="wpmdc_summary__text wpmdc_summary__pending__images--text wpmdc_d_block"><?php esc_html_e( 'Pending Images', 'wp-media-check' ); ?></span>
 						</div>
 					</div>
@@ -241,7 +228,7 @@ class WPSQR_WPMDC {
 				<div class="wpmdc_summary__segment">
 					<div class="wpmdc_summary__detail wpmdc_d__flex wpmdc_flex__direction--column">
 						<div class="wpmdc_summary__group">
-							<span class="wpmdc_summary__text wpmdc_summary__total__images--text wpmdc_d_block"><?php esc_html_e( 'Estimate processing time', 'wp-media-check' ); ?><strong class="wpmdc_d_block">30 to 40 minutes</strong></span>
+							<span class="wpmdc_summary__text wpmdc_summary__total__images--text wpmdc_d_block"><?php esc_html_e( 'Total estimated time ', 'wp-media-check' ); ?><strong class="wpmdc_d_block"><?php echo ' <span class="time_estimation">' . esc_html( $estimated_time['total_estimated_time'] ) . '</span><span class="time_unit">' . esc_html( $estimated_time['time_unit'] ) . '</span>'; ?> </strong></span>
 						</div>
 						<div class="wpmdc_summary__group wpmdc_summary__actions wpmdc_d__flex wpmdc_justify--betwen">
 							<button type="button" class="button button-primary button-large process_all_images" <?php echo esc_attr( $wpmdc_button_disabling ); ?>><?php esc_html_e( 'Start Processing', 'wp-media-check' ); ?></button>
@@ -420,11 +407,21 @@ class WPSQR_WPMDC {
 			}
 			// Dispatch the queue.
 			$this->image_processor->save()->dispatch();
-			$message = __( 'Process has been started.' , 'wp-media-check' );
-			wp_send_json_success( array( 'status' => true, 'message' => $message) );
+			$message = __( 'Process has been started.', 'wp-media-check' );
+			wp_send_json_success(
+				array(
+					'status'  => true,
+					'message' => $message,
+				)
+			);
 		} else {
-			$message = __( 'All the images are already processed.' , 'wp-media-check' );
-			wp_send_json_success( array( 'status' => false, 'message' => $message) );
+			$message = __( 'All the images are already processed.', 'wp-media-check' );
+			wp_send_json_success(
+				array(
+					'status'  => false,
+					'message' => $message,
+				)
+			);
 		}
 		exit;
 	}
@@ -548,7 +545,9 @@ class WPSQR_WPMDC {
 		}
 
 		$image_processing_progress = get_option( 'wpmdc_image_processing_progress' );
-		wp_send_json_success( $image_processing_progress );
+		$pending_images   = $image_processing_progress['pending'] ? $image_processing_progress['pending'] : 0;
+		$total_estimated_time = $this->get_estimated_time( $pending_images );
+		wp_send_json_success( [ 'progress' => $image_processing_progress , 'estimated_time' => $total_estimated_time] );
 		die();
 	}
 
@@ -576,6 +575,49 @@ class WPSQR_WPMDC {
 		} while ( $WP_Background_Process->check_if_processing() );
 		$message = esc_html__( 'Image processing has been stopped.', 'wp-media-check' );
 		wp_send_json_success( $message );
+	}
+
+	public function get_all_images() {
+		global $wpdb;
+		// Query to count the total number of attachment posts (images) in the database.
+		$query_of_total_images_in_wp = "SELECT COUNT(*) FROM $wpdb->posts WHERE post_type = 'attachment'";
+		$total_images                = (int) $wpdb->get_var( $query_of_total_images_in_wp ); //phpcs:ignore
+		return $total_images;
+	}
+
+	public function get_all_processed_images( $meta_key ) {
+		global $wpdb;
+		// SQL query to count images with a specific meta key.
+		$count_images_sql = $wpdb->prepare(
+			"SELECT COUNT(*) FROM {$wpdb->posts} p
+			INNER JOIN {$wpdb->postmeta} pm ON p.ID = pm.post_id
+			WHERE p.post_type = 'attachment'
+			AND pm.meta_key = %s",
+			$meta_key
+		);
+		// Get the count of images.
+		$total_images_with_meta_key = (int) $wpdb->get_var( $count_images_sql ); //phpcs:ignore
+		return $total_images_with_meta_key;
+	}
+
+	public function get_estimated_time( $pending_images ) {
+		$time_unit = esc_html( ' seconds', 'wp-media-check' );
+		if ( $pending_images > 0 ) {
+			$processing_time_per_img = 3 / 10;
+			$total_estimated_time    = round( ( ( $processing_time_per_img * $pending_images ) / 60 ) );
+			$time_unit               = esc_html( ' minutes', 'wp-media-check' );
+			if ( $total_estimated_time < 1 ) {
+				$total_estimated_time = round( ( ( $processing_time_per_img * $pending_images ) / 60 ), 2 );
+			}
+		} else {
+			$total_estimated_time = 0;
+		}
+
+		$estimated_time = [
+			'total_estimated_time' => $total_estimated_time,
+			'time_unit' => $time_unit
+		];
+		return $estimated_time;
 	}
 	/**
 	 * The singleton method

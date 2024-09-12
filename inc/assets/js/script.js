@@ -5,7 +5,6 @@ jQuery(document).ready(function($) {
     var $notification = jQuery('.wpmdc_notification');
     const interval = 3000;
     var checkStatusInterval;
-    var startInterVal = false;
     var isNumberCounterLoaded = false;
     var lastProcessed;
 
@@ -26,7 +25,6 @@ jQuery(document).ready(function($) {
 
     const restrictDeleteButton = (e) => {
         var attachmentId = $(e.target).closest('.attachment').data('id');
-
         // Perform an AJAX request to check if the attachment is used
         checkImageUsage(attachmentId);
     }
@@ -47,20 +45,21 @@ jQuery(document).ready(function($) {
                 data,
                 success(response){
                     if ( response.success ) {
-                        percentage = Math.round(((response.data.processed / response.data.total) * 100));
-                        if ( lastProcessed != response.data.processed ) {
+                        percentage = Math.round(((response.data.progress.processed / response.data.progress.total) * 100));
+                        if ( lastProcessed != response.data.progress.processed ) {
                             updateProgressCircle( percentage );
-                            jQuery('#processed-images').text(response.data.processed);
-                            jQuery('#pending-images').text(response.data.pending);
-                            lastProcessed = response.data.processed;
+                            jQuery('#processed-images').text(response.data.progress.processed);
+                            jQuery('#pending-images').text(response.data.progress.pending);
+                            jQuery('.time_estimation').text(response.data.estimated_time.total_estimated_time);
+                            jQuery('.time_unit').text(response.data.estimated_time.time_unit);
+                            lastProcessed = response.data.progress.processed;
                         } else {
                             clearInterval( checkStatusInterval );
                         }
-                        if ( response.data.processed == response.data.total ) {
+                        if ( response.data.progress.processed == response.data.progress.total ) {
                             clearInterval( checkStatusInterval );
                             $('.process_all_images').prop('disabled', false);
                             $('.cancel_process').addClass('wpmdc_d_none');
-                            startInterVal = false;
                         }
                     }
                 },
@@ -70,7 +69,6 @@ jQuery(document).ready(function($) {
             });
         } else {
             clearInterval( checkStatusInterval );
-            startInterVal = false;
         }
     }
 
@@ -98,7 +96,6 @@ jQuery(document).ready(function($) {
                     .animate({ opacity: 1 }, 400)
                     .delay(4000)
                     .animate({ opacity: 0 }, 400, function() { });
-                    startInterVal = true;
                 }
             },
             error(xhr) {
@@ -164,7 +161,9 @@ jQuery(document).ready(function($) {
 
     (function bindEvents() {
 
-        updateProgressCircle( processed_images );
+        if ( processed_images > 0 ) {
+            updateProgressCircle( processed_images );
+        }
         // Bind the function to the media library's grid view events
         $(document).on('click', '.attachment', restrictDeleteButton);
 
