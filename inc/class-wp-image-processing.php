@@ -60,10 +60,16 @@ class WP_Image_Processing extends WP_Background_Process {
 		parent::complete();
 	}
 
+	/**
+	 * Checking if background working is in progress or not.
+	 */
 	public function check_if_processing() {
 		return $this->is_process_running();
 	}
 
+	/**
+	 * Used for cancel background processing.
+	 */
 	public function cancel_processing() {
 		return $this->cancel_process();
 	}
@@ -202,6 +208,12 @@ class WP_Image_Processing extends WP_Background_Process {
 		return $post_edit_links;
 	}
 
+	/**
+	 * Adding image ids in post's meta.
+	 *
+	 * @param int $post_id ID of rendering post.
+	 * @param int $image_id ID of rendering image.
+	 */
 	public function add_post_meta( $post_id, $image_id ) {
 		$existing_image_ids = get_post_meta( $post_id, $this->meta_key, true );
 		$existing_image_ids = is_array( $existing_image_ids ) ? $existing_image_ids : array();
@@ -211,6 +223,12 @@ class WP_Image_Processing extends WP_Background_Process {
 		}
 	}
 
+	/**
+	 * Adding image ids in term's meta.
+	 *
+	 * @param int $post_id ID of rendering term.
+	 * @param int $image_id ID of rendering image.
+	 */
 	public function add_term_meta( $post_id, $image_id ) {
 		$existing_image_ids = get_term_meta( $post_id, $this->meta_key, true );
 		$existing_image_ids = is_array( $existing_image_ids ) ? $existing_image_ids : array();

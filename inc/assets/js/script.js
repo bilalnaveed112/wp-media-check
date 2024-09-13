@@ -59,6 +59,7 @@ jQuery(document).ready(function($) {
                         if ( response.data.progress.processed == response.data.progress.total ) {
                             clearInterval( checkStatusInterval );
                             $('.process_all_images').prop('disabled', false);
+                            $('.wpmdc_loader').addClass('wpmdc_d_none');
                             $('.cancel_process').addClass('wpmdc_d_none');
                         }
                     }
@@ -87,6 +88,7 @@ jQuery(document).ready(function($) {
                 if ( response.success ){
                     if ( response.data.status ) {
                         checkStatusInterval = setInterval(updateProgressBar, 10000);
+                        $('.wpmdc_loader').removeClass('wpmdc_d_none');
                         $('.cancel_process').removeClass('wpmdc_d_none');
                     } else {
                         $('.process_all_images').prop('disabled', false);
@@ -120,6 +122,7 @@ jQuery(document).ready(function($) {
             url: ajaxurl,
             data,
             success(response){
+                $('.wpmdc_loader').addClass('wpmdc_d_none');
                 $('.cancel_process').addClass('wpmdc_d_none');
                 $('.process_all_images').prop('disabled', false);
                 $('.cancel_process').prop('disabled', false);
